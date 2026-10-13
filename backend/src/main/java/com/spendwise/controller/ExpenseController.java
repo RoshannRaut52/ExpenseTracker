@@ -1,25 +1,67 @@
 package com.spendwise.controller;
 
-import java.math.BigDecimal;
+import com.spendwise.dto.ExpenseRequest;
+import com.spendwise.dto.ExpenseResponse;
+import com.spendwise.entity.User;
+import com.spendwise.service.AuthService;
+import com.spendwise.service.ExpenseService;
+import jakarta.validation.Valid;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.web.bind.annotation.*;
+
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.CopyOnWriteArrayList;
-import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.*;
 
 @RestController
 @RequestMapping("/api/expenses")
 public class ExpenseController {
-  private final List<Map<String, Object>> expenses = new CopyOnWriteArrayList<>();
 
-  public ExpenseController() {
-    expenses.add(Map.of("id", 1, "amount", new BigDecimal("840.00"), "description", "Dinner at Mizu", "categoryId", 1, "expenseDate", LocalDate.of(2026, 10, 12)));
-    expenses.add(Map.of("id", 2, "amount", new BigDecimal("3200.00"), "description", "Flight to Goa", "categoryId", 2, "expenseDate", LocalDate.of(2026, 10, 10)));
-  }
+    private final ExpenseService expenseService;
+    private final AuthService authService;
 
-  @GetMapping public List<Map<String, Object>> list() { return expenses; }
-  @PostMapping @ResponseStatus(HttpStatus.CREATED) public Map<String, Object> create(@RequestBody Map<String, Object> request) { var item = Map.<String, Object>of("id", System.currentTimeMillis(), "amount", request.getOrDefault("amount", 0), "description", request.getOrDefault("description", ""), "categoryId", request.getOrDefault("categoryId", 8), "expenseDate", request.getOrDefault("expenseDate", LocalDate.now().toString())); expenses.add(0, item); return item; }
-  @PutMapping("/{id}") public Map<String, Object> update(@PathVariable Long id, @RequestBody Map<String, Object> request) { return create(request); }
-  @DeleteMapping("/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void delete(@PathVariable Long id) { expenses.removeIf(item -> String.valueOf(item.get("id")).equals(String.valueOf(id))); }
+    public ExpenseController(ExpenseService expenseService, AuthService authService) {
+        this.expenseService = expenseService;
+        this.authService = authService;
+    }
+
+    @GetMapping
+    public List<ExpenseResponse> list(
+            Authentication auth,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Long categoryId
+    ) {
+        User user = currentUser(auth);
+        return expenseService.list(user, from, to, categoryId);
+    }
+
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ExpenseResponse create(Authentication auth, @Valid @RequestBody ExpenseRequest req) {
+        User user = currentUser(auth);
+        return expenseService.create(user, req);
+    }
+
+    @PutMapping("/{id}")
+    public ExpenseResponse update(
+            Authentication auth,
+            @PathVariable Long id,
+            @Valid @RequestBody ExpenseRequest req
+    ) {
+        User user = currentUser(auth);
+        return expenseService.update(user, id, req);
+    }
+
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(Authentication auth, @PathVariable Long id) {
+        User user = currentUser(auth);
+        expenseService.delete(user, id);
+    }
+
+    private User currentUser(Authentication auth) {
+        return authService.requireUserByEmail(auth.getName());
+    }
 }
